@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Plant & Object Assistant</title>
+    <!-- Load Tailwind CSS for modern styling and responsiveness -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configure Tailwind for Inter font (optional but recommended) -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <!-- Load TensorFlow.js for in-browser Machine Learning -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.4.0/dist/tf.min.js"></script>
+    
+    <style>
+        /* Custom styles for chat window */
+        .chat-window {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #e5e7eb; /* gray-200 */
+        }
+        .bot-message, .user-message {
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            border-radius: 15px;
+            max-width: 80%;
+            clear: both;
+            word-wrap: break-word;
+            font-size: 0.9rem;
+        }
+        .bot-message {
+            background-color: #d1fae5; /* green-100 */
+            float: left;
+            margin-right: auto;
+        }
+        .user-message {
+            background-color: #bfdbfe; /* blue-200 */
+            float: right;
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans p-4 sm:p-8">
+
+    <div id="app" class="max-w-4xl mx-auto space-y-8">
+        <header class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500">
+            <h1 class="text-3xl font-extrabold text-gray-800 flex items-center">
+                🌿 Visual Lens & Smart Assistant
+            </h1>
+            <p class="text-gray-500 mt-1">Lightweight, browser-based tool for object identification and plant care advice.</p>
+        </header>
+
+        <!-- ----------------------- Image Analyzer Section ----------------------- -->
+        <section id="visual-assistant" class="bg-white p-6 rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">📸 Image Analyzer</h2>
+            <input type="file" id="imageUpload" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
+            
+            <div class="mt-4 flex flex-col sm:flex-row gap-6">
+                <!-- Image Display Area -->
+                <div id="imageContainer" class="w-full sm:w-1/2 p-2 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
+                    <img id="uploadedImage" src="https://placehold.co/400x300/e0f2f1/047857?text=Upload+Image" alt="Uploaded Image" class="max-w-full max-h-64 rounded-md shadow-md" style="display:block;">
+                </div>
+                
+                <!-- Results Area -->
+                <div id="results" class="w-full sm:w-1/2 p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+                    <p class="text-emerald-700"><strong>Loading ML Models...</strong> Please wait.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ----------------------- Chatbot Section ----------------------- -->
+        <section id="chatbot-assistant" class="bg-white p-6 rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">🤖 Smart Plant Chatbot</h2>
+            <div id="chatWindow" class="chat-window p-3 rounded-lg flex flex-col space-y-2 mb-4">
+                <p class="bot-message">Hello! I can answer questions about plant care, object details, or general knowledge.</p>
+            </div>
+            <div class="chat-input-container flex gap-2">
+                <input type="text" id="chatInput" placeholder="e.g., What are the symptoms of powdery mildew?" class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500">
+                <button id="sendMessage" class="px-6 py-3 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition duration-150 shadow-md">Send</button>
+            </div>
+        </section>
+    </div>
+
+    <!-- ----------------------- JAVASCRIPT LOGIC ----------------------- -->
+    <script>
+        // --- GLOBAL VARIABLES & CONFIGURATION ---
+        let generalObjectModel = null;
+        const IMAGE_SIZE = 224; 
+        
+        // =========================================================================================
+        // !!! API CONFIGURATION - SWITCHED TO GEMINI API FOR STABILITY !!!
+        const GEMINI_API_KEY = ""; // Leave as empty string for the environment to inject the key
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+        const systemPrompt = "You are a helpful and simple plant care and object information assistant. Keep answers concise and friendly, similar to a knowledgeable expert giving quick tips.";
+        // =========================================================================================
+
+        // The MobileNetV1 model URL 
+        const MOBILENET_URL = 'https://storage.googleapis.com/tfjs-models/tfjs/mobilenet_v1_1.0_224/model.json'; 
+        const resultsDiv = document.getElementById('results');
+
+        // --- 1. Model Loading ---
+        async function loadModels() {
+            try {
+                // Use tf.loadLayersModel() to correctly load the layers model from the V1 URL.
+                generalObjectModel = await tf.loadLayersModel(MOBILENET_URL);
+                
+                resultsDiv.innerHTML = `
+                    <h3 class="text-lg font-bold text-emerald-800">✅ Models Loaded!</h3>
+                    <p class="text-sm text-emerald-700">Ready for **general object identification** (MobileNet V1). 
+                    <br>Plant disease analysis is **simulated**.</p>
+                `;
+            } catch (error) {
+                console.error("Error loading models:", error);
+                resultsDiv.innerHTML = `
+                    <h3 class="text-lg font-bold text-red-700">❌ ML Model Error</h3>
+                    <p class="text-sm text-red-600">Could not load TensorFlow.js model. Check console for details.</p>`;
+            }
+        }
+
+        // --- 2. Image Analysis Core Logic ---
+        async function analyzeImage(imageElement) {
+            if (!generalObjectModel) {
+                resultsDiv.innerHTML = `<p class="text-orange-700">Models still loading. Please wait.</p>`;
+                return;
+            }
+
+            resultsDiv.innerHTML = '<p class="text-blue-700 flex items-center"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Analyzing Image...</p>';
+            
+            // Image Preprocessing (MobileNet standard)
+            const tensor = tf.browser.fromPixels(imageElement)
+                .resizeNearestNeighbor([IMAGE_SIZE, IMAGE_SIZE]) 
+                .toFloat()
+                .sub(127.5) // Normalize to [-1, 1]
+                .div(127.5)
+                .expandDims(); 
+
+            // Inference
+            const generalPrediction = generalObjectModel.predict(tensor);
+            const generalTopK = await getTopKClasses(generalPrediction, 3); 
+
+            let resultsHTML = '<h3 class="text-lg font-bold text-gray-700">🔍 Object Identification</h3><ul class="space-y-1 mt-2">';
+            generalTopK.forEach(p => {
+                resultsHTML += `<li class="text-sm"><strong>${p.className}</strong> (Confidence: <span class="text-emerald-600">${(p.probability * 100).toFixed(2)}%</span>)</li>`;
+            });
+            resultsHTML += '</ul>';
+
+            // Conditional Plant Analysis (SIMULATED)
+            const topClass = generalTopK[0].className.toLowerCase();
+            if (topClass.includes('plant') || topClass.includes('flower') || topClass.includes('leaf')) {
+                const simulatedDisease = getSimulatedPlantResults(topClass);
+                
+                resultsHTML += `
+                    <div class="mt-4 pt-4 border-t border-emerald-300">
+                        <h3 class="text-lg font-bold text-gray-700">🌿 Plant Analysis (Simulated)</h3>
+                        <p class="text-sm mt-1"><strong>Plant Type:</strong> ${simulatedDisease.plantName}</p>
+                        <p class="text-sm"><strong>Condition:</strong> <span class="font-bold text-${simulatedDisease.disease.includes('Healthy') ? 'green' : 'red'}-600">${simulatedDisease.disease}</span></p>
+                        
+                        <h4 class="font-semibold mt-2">🌱 Care Suggestions:</h4>
+                        <ul class="list-disc list-inside text-sm ml-2 space-y-0.5">
+                            ${simulatedDisease.care.map(c => `<li>${c}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            resultsDiv.innerHTML = resultsHTML;
+            tensor.dispose(); 
+        }
+
+        // --- Helper Functions (ML Simulation) ---
+
+        // Simple simulation of ImageNet classes for general object recognition
+        async function getTopKClasses(predictions, k) {
+            const mockLabels = ["Daisy flower", "Monstera plant", "Tomato leaf", "Apple", "Laptop computer", "Desk chair", "Cat", "Banana", "Soccer ball", "Vase"];
+            const { values, indices } = tf.topk(predictions, k);
+            const topKValues = await values.data();
+            const topKIndices = await indices.data();
+
+            return Array.from(topKValues).map((value, i) => ({
+                className: mockLabels[topKIndices[i] % mockLabels.length], 
+                probability: value
+            }));
+        }
+
+        // Simple simulation of plant disease/care for the demo
+        function getSimulatedPlantResults(generalName) {
+            if (generalName.includes('tomato')) {
+                return {
+                    plantName: "Tomato Plant",
+                    disease: "Possible Fungal Disease (Early Blight)",
+                    care: ["Isolate the plant.", "Remove all infected leaves.", "Consider a mild fungicide treatment."]
+                };
+            }
+            if (generalName.includes('flower') || generalName.includes('daisy')) {
+                return {
+                    plantName: "Flowering Plant",
+                    disease: "Healthy",
+                    care: ["Maintain watering routine.", "Provide full sun.", "Deadhead spent blooms to encourage new growth."]
+                };
+            }
+            return {
+                plantName: "Plant/Foliage",
+                disease: "Healthy (Check closely)",
+                care: ["Monitor for pests.", "Ensure proper drainage.", "Ask the chatbot for species-specific advice!"]
+            };
+        }
+
+
+        // --- 3. Event Listeners and Setup ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadModels(); 
+
+            const imageUpload = document.getElementById('imageUpload');
+            const uploadedImage = document.getElementById('uploadedImage');
+            
+            imageUpload.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        uploadedImage.src = e.target.result;
+                        uploadedImage.onload = () => analyzeImage(uploadedImage);
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            // --- 4. Chatbot Logic (Using Gemini API) ---
+            const chatInput = document.getElementById('chatInput');
+            const sendMessageButton = document.getElementById('sendMessage');
+            const chatWindow = document.getElementById('chatWindow');
+
+            sendMessageButton.addEventListener('click', () => sendChat());
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendChat();
+                }
+            });
+
+            async function sendChat() {
+                const userMessage = chatInput.value.trim();
+                if (!userMessage) return;
+
+                // Display user message
+                const userHTML = `<p class="user-message">${userMessage}</p>`;
+                chatWindow.innerHTML += userHTML;
+                chatInput.value = '';
+                chatWindow.scrollTop = chatWindow.scrollHeight; 
+
+                // Display loading message
+                const loadingHTML = `<p class="bot-message text-gray-500 flex items-center" id="loading-msg"><svg class="animate-spin -ml-1 mr-3 h-4 w-4 text-emerald-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>... consulting AI ...</p>`;
+                chatWindow.innerHTML += loadingHTML;
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+
+                let botResponseText = "Connection Failed. Please try again or check your network.";
+                let success = false;
+                
+                try {
+                    const payload = {
+                        contents: [{ parts: [{ text: userMessage }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                    };
+
+                    const response = await fetch(GEMINI_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP Error ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                    if (generatedText) {
+                        botResponseText = generatedText;
+                        success = true;
+                    } else {
+                        botResponseText = "The AI model returned no output. Try rephrasing the question.";
+                    }
+                    
+                } catch (error) {
+                    console.error("Gemini API Fetch Error:", error);
+                    // Leave the default failure message
+                }
+                
+                // Remove loading message
+                const loadingMsg = document.getElementById('loading-msg');
+                if (loadingMsg) loadingMsg.remove();
+                
+                // Display final response
+                const messageClass = success ? 'bot-message' : 'bot-message bg-red-100 text-red-800';
+                const botHTML = `<p class="${messageClass}">${botResponseText}</p>`;
+                chatWindow.innerHTML += botHTML;
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            }
+        });
+    </script>
+</body>
+</html>

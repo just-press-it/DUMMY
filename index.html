@@ -94,29 +94,34 @@
     <script>
         // --- GLOBAL VARIABLES & CONFIGURATION ---
         let generalObjectModel = null;
+        let lastUploadedImageBase64 = null; // Stores image for analysis by LLM
         const IMAGE_SIZE = 224; 
         
         // =========================================================================================
-        // !!! API CONFIGURATION - SWITCHED TO GEMINI API FOR STABILITY !!!
-        const GEMINI_API_KEY = ""; // Leave as empty string for the environment to inject the key
-        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
-        const systemPrompt = "You are a helpful and simple plant care and object information assistant. Keep answers concise and friendly, similar to a knowledgeable expert giving quick tips.";
+        // !!! API CONFIGURATION: PASTE YOUR GEMINI API KEY HERE !!!
+        // WARNING: This key will be public on GitHub. Create a new key just for this project.
+        const USER_PROVIDED_GEMINI_API_KEY = "AIzaSyB8lWR0TK-vW2zvn2GfpJJtitaCpnYBuu8"; // <-- REPLACE "" with YOUR ACTUAL KEY (e.g., "AIza...")
         // =========================================================================================
 
-        // The MobileNetV1 model URL 
+        const GEMINI_API_KEY = USER_PROVIDED_GEMINI_API_KEY; // Use the user's key
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+        const analysisPrompt = "Analyze this image. If it's a plant, identify the plant species, list any visible diseases or issues, and provide three concise care tips. If it is a non-plant object, identify it clearly. Format the output as simple, clear paragraphs.";
+        const systemPrompt = "You are a helpful and simple plant care and object information assistant. Keep answers concise and friendly, similar to a knowledgeable expert giving quick tips.";
+
+        // The MobileNetV1 model URL (kept for general object analysis if needed)
         const MOBILENET_URL = 'https://storage.googleapis.com/tfjs-models/tfjs/mobilenet_v1_1.0_224/model.json'; 
         const resultsDiv = document.getElementById('results');
 
-        // --- 1. Model Loading ---
+        // --- 1. Model Loading (for local check) ---
         async function loadModels() {
             try {
-                // Use tf.loadLayersModel() to correctly load the layers model from the V1 URL.
+                // Load TensorFlow model for quick client-side classification
                 generalObjectModel = await tf.loadLayersModel(MOBILENET_URL);
                 
                 resultsDiv.innerHTML = `
                     <h3 class="text-lg font-bold text-emerald-800">✅ Models Loaded!</h3>
                     <p class="text-sm text-emerald-700">Ready for **general object identification** (MobileNet V1). 
-                    <br>Plant disease analysis is **simulated**.</p>
+                    <br>Upload an image to use the advanced Gemini Vision model for detailed plant analysis.</p>
                 `;
             } catch (error) {
                 console.error("Error loading models:", error);
@@ -126,93 +131,92 @@
             }
         }
 
-        // --- 2. Image Analysis Core Logic ---
+        // --- Utility to convert data URL to base64 and MIME type ---
+        function dataURLtoMime(dataurl) {
+            const arr = dataurl.split(',');
+            const mime = arr[0].match(/:(.*?);/)[1];
+            const data = arr[1];
+            return { mime, data };
+        }
+
+        // --- 2. Image Analysis Core Logic (Using Gemini Vision) ---
         async function analyzeImage(imageElement) {
-            if (!generalObjectModel) {
-                resultsDiv.innerHTML = `<p class="text-orange-700">Models still loading. Please wait.</p>`;
+            if (!lastUploadedImageBase64) {
+                resultsDiv.innerHTML = `<p class="text-orange-700">Please upload an image first.</p>`;
+                return;
+            }
+            if (!GEMINI_API_KEY) {
+                resultsDiv.innerHTML = `<p class="text-red-700 font-bold">🚨 API KEY REQUIRED 🚨</p><p class="text-red-600 text-sm">Please insert your Gemini API key in the script to enable vision analysis.</p>`;
                 return;
             }
 
-            resultsDiv.innerHTML = '<p class="text-blue-700 flex items-center"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Analyzing Image...</p>';
+            resultsDiv.innerHTML = '<p class="text-blue-700 flex items-center"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Analyzing Image with Gemini Vision...</p>';
             
-            // Image Preprocessing (MobileNet standard)
-            const tensor = tf.browser.fromPixels(imageElement)
-                .resizeNearestNeighbor([IMAGE_SIZE, IMAGE_SIZE]) 
-                .toFloat()
-                .sub(127.5) // Normalize to [-1, 1]
-                .div(127.5)
-                .expandDims(); 
+            // Prepare image data for API
+            const { mime, data } = dataURLtoMime(lastUploadedImageBase64);
 
-            // Inference
-            const generalPrediction = generalObjectModel.predict(tensor);
-            const generalTopK = await getTopKClasses(generalPrediction, 3); 
+            try {
+                const payload = {
+                    contents: [
+                        { 
+                            role: "user",
+                            parts: [
+                                { text: analysisPrompt }, // The analysis prompt
+                                { inlineData: { mimeType: mime, data: data } } // The image data
+                            ]
+                        }
+                    ],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                };
 
-            let resultsHTML = '<h3 class="text-lg font-bold text-gray-700">🔍 Object Identification</h3><ul class="space-y-1 mt-2">';
-            generalTopK.forEach(p => {
-                resultsHTML += `<li class="text-sm"><strong>${p.className}</strong> (Confidence: <span class="text-emerald-600">${(p.probability * 100).toFixed(2)}%</span>)</li>`;
-            });
-            resultsHTML += '</ul>';
+                const response = await fetch(GEMINI_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
 
-            // Conditional Plant Analysis (SIMULATED)
-            const topClass = generalTopK[0].className.toLowerCase();
-            if (topClass.includes('plant') || topClass.includes('flower') || topClass.includes('leaf')) {
-                const simulatedDisease = getSimulatedPlantResults(topClass);
-                
-                resultsHTML += `
-                    <div class="mt-4 pt-4 border-t border-emerald-300">
-                        <h3 class="text-lg font-bold text-gray-700">🌿 Plant Analysis (Simulated)</h3>
-                        <p class="text-sm mt-1"><strong>Plant Type:</strong> ${simulatedDisease.plantName}</p>
-                        <p class="text-sm"><strong>Condition:</strong> <span class="font-bold text-${simulatedDisease.disease.includes('Healthy') ? 'green' : 'red'}-600">${simulatedDisease.disease}</span></p>
-                        
-                        <h4 class="font-semibold mt-2">🌱 Care Suggestions:</h4>
-                        <ul class="list-disc list-inside text-sm ml-2 space-y-0.5">
-                            ${simulatedDisease.care.map(c => `<li>${c}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
+                if (!response.ok) {
+                    throw new Error(`HTTP Error ${response.status}`);
+                }
+
+                const result = await response.json();
+                const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (generatedText) {
+                    // Convert paragraphs to a nicely formatted HTML list of results
+                    const paragraphs = generatedText.split('\n\n').filter(p => p.trim() !== '');
+                    let htmlOutput = '<h3 class="text-lg font-bold text-gray-700">✅ Gemini Vision Analysis</h3><div class="space-y-3 mt-2">';
+                    
+                    paragraphs.forEach(p => {
+                        // Simple heuristic to highlight key sections
+                        let formattedP = p.replace(/(Plant Species|Object|Diseases|Care Tips|Issue):/g, '<strong>$1:</strong>');
+                        htmlOutput += `<p class="text-sm bg-white p-2 rounded">${formattedP}</p>`;
+                    });
+                    
+                    htmlOutput += '</div>';
+                    resultsDiv.innerHTML = htmlOutput;
+                } else {
+                    resultsDiv.innerHTML = '<p class="text-red-600">The AI vision model returned no clear analysis. Please try a clearer image.</p>';
+                }
+
+            } catch (error) {
+                console.error("Gemini Vision API Fetch Error:", error);
+                resultsDiv.innerHTML = `<p class="text-red-600">Analysis failed: Could not connect to the vision service. Check network/console.</p>`;
             }
-
-            resultsDiv.innerHTML = resultsHTML;
-            tensor.dispose(); 
         }
-
-        // --- Helper Functions (ML Simulation) ---
-
-        // Simple simulation of ImageNet classes for general object recognition
+        
+        // --- Dummy functions for MobileNet (kept for initial load check) ---
         async function getTopKClasses(predictions, k) {
             const mockLabels = ["Daisy flower", "Monstera plant", "Tomato leaf", "Apple", "Laptop computer", "Desk chair", "Cat", "Banana", "Soccer ball", "Vase"];
             const { values, indices } = tf.topk(predictions, k);
             const topKValues = await values.data();
             const topKIndices = await indices.data();
-
             return Array.from(topKValues).map((value, i) => ({
                 className: mockLabels[topKIndices[i] % mockLabels.length], 
                 probability: value
             }));
         }
-
-        // Simple simulation of plant disease/care for the demo
-        function getSimulatedPlantResults(generalName) {
-            if (generalName.includes('tomato')) {
-                return {
-                    plantName: "Tomato Plant",
-                    disease: "Possible Fungal Disease (Early Blight)",
-                    care: ["Isolate the plant.", "Remove all infected leaves.", "Consider a mild fungicide treatment."]
-                };
-            }
-            if (generalName.includes('flower') || generalName.includes('daisy')) {
-                return {
-                    plantName: "Flowering Plant",
-                    disease: "Healthy",
-                    care: ["Maintain watering routine.", "Provide full sun.", "Deadhead spent blooms to encourage new growth."]
-                };
-            }
-            return {
-                plantName: "Plant/Foliage",
-                disease: "Healthy (Check closely)",
-                care: ["Monitor for pests.", "Ensure proper drainage.", "Ask the chatbot for species-specific advice!"]
-            };
-        }
+        function getSimulatedPlantResults(generalName) { /* Dummy implementation not used in final analysis */ return { plantName: "N/A", disease: "N/A", care: ["N/A"] }; }
 
 
         // --- 3. Event Listeners and Setup ---
@@ -228,7 +232,8 @@
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         uploadedImage.src = e.target.result;
-                        uploadedImage.onload = () => analyzeImage(uploadedImage);
+                        lastUploadedImageBase64 = e.target.result; // Store base64 data
+                        uploadedImage.onload = () => analyzeImage(uploadedImage); // Trigger analysis after load
                     };
                     reader.readAsDataURL(file);
                 }
@@ -249,6 +254,16 @@
             async function sendChat() {
                 const userMessage = chatInput.value.trim();
                 if (!userMessage) return;
+
+                if (!GEMINI_API_KEY) {
+                    const loadingMsg = document.getElementById('loading-msg');
+                    if (loadingMsg) loadingMsg.remove();
+                    chatWindow.innerHTML += `<p class="bot-message bg-red-100 text-red-800">
+                        **Chatbot Disabled:** Please insert your Gemini API key in the script to use the chatbot.
+                    </p>`;
+                    chatWindow.scrollTop = chatWindow.scrollHeight;
+                    return;
+                }
 
                 // Display user message
                 const userHTML = `<p class="user-message">${userMessage}</p>`;

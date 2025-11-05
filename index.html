@@ -510,11 +510,20 @@
                 return;
             }
 
-            // Simulate sign in and redirect to main.html
-            alert(`Welcome back! Signing in as ${email}`);
+            // Check if user exists in localStorage
+            const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+            const user = registeredUsers.find(u => u.email === email && u.password === password);
+
+            if (!user) {
+                alert('Invalid email or password! Please sign up first if you don\'t have an account.');
+                return;
+            }
+
+            // Sign in successful
+            alert(`Welcome back, ${user.name}!`);
             
-            // Store user info in localStorage
-            localStorage.setItem('userEmail', email);
+            // Store current user session
+            localStorage.setItem('currentUser', JSON.stringify(user));
             localStorage.setItem('isLoggedIn', 'true');
             
             // Redirect to main.html
@@ -540,17 +549,40 @@
                 return;
             }
 
+            if (password.length < 6) {
+                alert('Password must be at least 6 characters long!');
+                return;
+            }
+
             if (!agreeTerms) {
                 alert('Please agree to the Terms & Conditions!');
                 return;
             }
 
-            // Simulate sign up and redirect to main.html
+            // Check if email already exists
+            const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+            const emailExists = registeredUsers.some(u => u.email === email);
+
+            if (emailExists) {
+                alert('Email already registered! Please sign in instead.');
+                return;
+            }
+
+            // Register new user
+            const newUser = {
+                name: name,
+                email: email,
+                password: password,
+                createdAt: new Date().toISOString()
+            };
+
+            registeredUsers.push(newUser);
+            localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+
             alert(`Account created successfully! Welcome, ${name}!`);
             
-            // Store user info in localStorage
-            localStorage.setItem('userName', name);
-            localStorage.setItem('userEmail', email);
+            // Store current user session
+            localStorage.setItem('currentUser', JSON.stringify(newUser));
             localStorage.setItem('isLoggedIn', 'true');
             
             // Redirect to main.html

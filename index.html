@@ -538,14 +538,14 @@
                 generalObjectModel = await tf.loadLayersModel(MOBILENET_URL);
                 
                 resultsDiv.innerHTML = `
-                    <h3 class="text-lg font-bold text-emerald-800">✅ Models Loaded!</h3>
-                    <p class="text-sm text-emerald-700">Ready for **general object identification** (MobileNet V1). 
-                    <br>Upload an image to use the advanced Gemini Vision model for detailed plant analysis.</p>
+                    <h3 class="text-lg font-bold text-emerald-800">Models Loaded!</h3>
+                    <p class="text-sm text-emerald-700">Ready for general object identification (MobileNet V1). 
+                    <br>Upload an image to use the advanced  Vision model for detailed plant analysis.</p>
                 `;
             } catch (error) {
                 console.error("Error loading models:", error);
                 resultsDiv.innerHTML = `
-                    <h3 class="text-lg font-bold text-red-700">❌ ML Model Error</h3>
+                    <h3 class="text-lg font-bold text-red-700"> ML Model Error!!!!</h3>
                     <p class="text-sm text-red-600">Could not load TensorFlow.js model. Check console for details.</p>`;
             }
         }
@@ -565,11 +565,11 @@
                 return;
             }
             if (!GEMINI_API_KEY) {
-                resultsDiv.innerHTML = `<p class="text-red-700 font-bold">🚨 API KEY REQUIRED 🚨</p><p class="text-red-600 text-sm">Please insert your Gemini API key in the script to enable vision analysis.</p>`;
+                resultsDiv.innerHTML = `<p class="text-red-700 font-bold">🚨 API KEY REQUIRED 🚨</p><p class="text-red-600 text-sm">Please insert your  API key in the script to enable vision analysis.</p>`;
                 return;
             }
 
-            resultsDiv.innerHTML = '<p class="text-blue-700 flex items-center"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Analyzing Image with Gemini Vision...</p>';
+            resultsDiv.innerHTML = '<p class="text-blue-700 flex items-center"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Analyzing Image with Smart Vision...</p>';
             
             // Prepare image data for API
             const { mime, data } = dataURLtoMime(lastUploadedImageBase64);
@@ -604,7 +604,7 @@
                 if (generatedText) {
                     // Convert paragraphs to a nicely formatted HTML list of results
                     const paragraphs = generatedText.split('\n\n').filter(p => p.trim() !== '');
-                    let htmlOutput = '<h3 class="text-lg font-bold text-gray-700">✅ Gemini Vision Analysis</h3><div class="space-y-3 mt-2">';
+                    let htmlOutput = '<h3 class="text-lg font-bold text-gray-700">✅ Smart Vision Analysis</h3><div class="space-y-3 mt-2">';
                     
                     paragraphs.forEach(p => {
                         // Simple heuristic to highlight key sections
@@ -619,7 +619,7 @@
                 }
 
             } catch (error) {
-                console.error("Gemini Vision API Fetch Error:", error);
+                console.error("Your Vision API Fetch Error:", error);
                 resultsDiv.innerHTML = `<p class="text-red-600">Analysis failed: Could not connect to the vision service. Check network/console.</p>`;
             }
         }
@@ -678,7 +678,7 @@
                     const loadingMsg = document.getElementById('loading-msg');
                     if (loadingMsg) loadingMsg.remove();
                     chatWindow.innerHTML += `<p class="bot-message bg-red-100 text-red-800">
-                        **Chatbot Disabled:** Please insert your Gemini API key in the script to use the chatbot.
+                        Chatbot Disabled: Please insert your  API key in the script to use the chatbot.
                     </p>`;
                     chatWindow.scrollTop = chatWindow.scrollHeight;
                     return;
@@ -725,7 +725,7 @@
                     }
                     
                 } catch (error) {
-                    console.error("Gemini API Fetch Error:", error);
+                    console.error("Your API Fetch Error:", error);
                     // Leave the default failure message
                 }
                 
